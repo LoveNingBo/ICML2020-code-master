@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/ICML2020-code.iml" filepath="$PROJECT_DIR$/.idea/ICML2020-code.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../ICML2020-code-master/.idea/ICML2020-code-master.iml" filepath="$PROJECT_DIR$/../ICML2020-code-master/.idea/ICML2020-code-master.iml" />
+    </modules>
+  </component>
+</project>
