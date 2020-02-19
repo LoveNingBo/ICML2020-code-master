@@ -2,6 +2,16 @@ import tensorflow as tf
 import numpy as np
 import tflearn
 
+"""
+搭建两个神经网络, target_net 用于预测 q_target 值, 他不会及时更新参数. 
+eval_net 用于预测 q_eval, 这个神经网络拥有最新的神经网络参数. 
+不过这两个神经网络结构是完全一样的, 只是里面的参数不一样. 
+两个神经网络是为了固定住一个神经网络 (target_net) 的参数, target_net 是 eval_net 的一个历史版本, 
+拥有 eval_net 很久之前的一组参数, 而且这组参数被固定一段时间, 然后再被 eval_net 的新参数所替换. 
+而 eval_net 是不断在被提升的, 所以是一个可以被训练的网络 trainable=True. 
+而 target_net 的 trainable=False.
+"""
+
 class ActorNetwork(object):
     """
     action network
@@ -9,7 +19,7 @@ class ActorNetwork(object):
     sample the action
     """
 
-    def __init__(self, sess, dim, optimizer, learning_rate, tau, num_critic_vars):
+    def __init__(self, sess, dim, optimizer, learning_rate, tau):
         self.global_step = tf.Variable(0, trainable=False, name="ActorStep")
         self.sess = sess
         self.dim = dim
@@ -21,18 +31,18 @@ class ActorNetwork(object):
             self.optimizer = tf.train.AdagradOptimizer(self.learning_rate)
         elif optimizer == 'Adadelta':
             self.optimizer = tf.train.AdadeltaOptimizer(self.learning_rate)
-        print(self.optimizer)
         self.num_other_variables = len(tf.trainable_variables())
 
-        #actor network(updating)
+        #actor network(updating)  eval_net网络
         self.input_l, self.input_d, self.scaled_out = self.create_actor_network()
         self.network_params = tf.trainable_variables()[self.num_other_variables:]
 
-        #actor network(delayed updating)
+        #actor network(delayed updating)  target_net网络,延迟更新减少相关性
         self.target_input_l, self.target_input_d, self.target_scaled_out = self.create_actor_network()
         self.target_network_params = tf.trainable_variables()[self.num_other_variables + len(self.network_params):]
 
         #delayed updaing actor network
+        """延迟更新target 神经网络参数，为了打乱相关性"""
         self.update_target_network_params = \
                 [self.target_network_params[i].assign(\
                 tf.multiply(self.network_params[i], self.tau) +\
@@ -48,15 +58,16 @@ class ActorNetwork(object):
         self.log_target_scaled_out = tf.log(self.target_scaled_out)
 
         self.actor_gradients = tf.gradients(self.log_target_scaled_out, self.target_network_params, self.action_gradient)
+        print(self.actor_gradients)
 
-        self.grads = [tf.placeholder(tf.float32, [600, 1]),
+        self.grads = [tf.placeholder(tf.float32, [600,1]), 
                         tf.placeholder(tf.float32, [1,]),
-                        tf.placeholder(tf.float32, [600, 1])]
+                        tf.placeholder(tf.float32, [300, 1])]
         self.optimize = self.optimizer.apply_gradients(zip(self.grads, self.network_params[:-1]), global_step=self.global_step)
 
     def create_actor_network(self):
         input_l = tf.placeholder(tf.float32, shape=[1, self.dim*2])
-        input_d = tf.placeholder(tf.float32, shape=[1, self.dim*2])
+        input_d = tf.placeholder(tf.float32, shape=[1, self.dim])
         
         t1 = tflearn.fully_connected(input_l, 1)
         t2 = tflearn.fully_connected(input_d, 1)
@@ -65,12 +76,14 @@ class ActorNetwork(object):
                 tf.matmul(input_l,t1.W) + tf.matmul(input_d,t2.W) + t1.b,\
                 activation = 'sigmoid')
         
-        scaled_out = tf.stack([1.0 - scaled_out[0][0], scaled_out[0][0]])
+        s_out = tf.clip_by_value(scaled_out[0][0], 1e-5, 1 - 1e-5)
+
+        scaled_out = tf.stack([1.0 - s_out, s_out])
         return input_l, input_d, scaled_out
     
     def train(self, grad):
         self.sess.run(self.optimize, feed_dict={
-            self.grads[0]: grad[0],
+            self.grads[0]: grad[0], 
             self.grads[1]: grad[1],
             self.grads[2]: grad[2]})
 
@@ -90,3 +103,6 @@ class ActorNetwork(object):
     
     def assign_active_network(self):
         self.sess.run(self.assign_active_network_params)
+
+
+
